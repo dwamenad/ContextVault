@@ -1,0 +1,232 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TeamRole {
+  OWNER
+  PI
+  ANALYST
+  COLLABORATOR
+  PUBLIC_VIEWER
+}
+
+enum DocumentType {
+  PREREGISTRATION
+  ANALYSIS_PLAN
+  SCRIPT
+  README
+  MEETING_NOTE
+  PAPER_DRAFT
+  FIGURE_NOTE
+  PUBLIC_SUMMARY
+  DATA_DICTIONARY
+  OTHER
+}
+
+enum SourceType {
+  UPLOAD
+  GOOGLE_DRIVE
+  GITHUB
+  LOCAL_FOLDER
+  MANUAL_TEXT
+}
+
+enum Visibility {
+  PI_ONLY
+  ANALYST
+  COLLABORATOR
+  PUBLIC
+}
+
+enum AuthorityStatus {
+  AUTHORITATIVE
+  SUPPORTING
+  DRAFT
+  DEPRECATED
+  SCRATCH
+}
+
+model User {
+  id                String            @id @default(cuid())
+  name              String
+  email             String            @unique
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  memberships       TeamMember[]
+  documentVersions  DocumentVersion[] @relation("DocumentVersionCreator")
+  retrievalLogs     RetrievalLog[]
+}
+
+model Team {
+  id          String       @id @default(cuid())
+  name        String
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  members     TeamMember[]
+  vaults      Vault[]
+}
+
+model TeamMember {
+  id        String   @id @default(cuid())
+  teamId    String
+  userId    String
+  role      TeamRole
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+}
+
+model Vault {
+  id          String    @id @default(cuid())
+  teamId      String
+  name        String
+  description String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  team        Team      @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  projects    Project[]
+}
+
+model Project {
+  id            String         @id @default(cuid())
+  vaultId       String
+  name          String
+  slug          String
+  description   String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  vault         Vault          @relation(fields: [vaultId], references: [id], onDelete: Cascade)
+  documents     Document[]
+  chunks        Chunk[]
+  retrievalLogs RetrievalLog[]
+  mcpResources  McpResource[]
+
+  @@unique([vaultId, slug])
+}
+
+model Document {
+  id              String          @id @default(cuid())
+  projectId       String
+  title           String
+  documentType    DocumentType
+  sourceType      SourceType
+  sourceUri       String?
+  visibility      Visibility
+  authorityStatus AuthorityStatus
+  isMcpExposed    Boolean         @default(false)
+  mcpUri          String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  project         Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  versions        DocumentVersion[]
+  mcpResources    McpResource[]
+  changes         DocumentChange[]
+}
+
+model DocumentVersion {
+  id            String           @id @default(cuid())
+  documentId    String
+  versionLabel  String
+  versionNumber Int
+  fileName      String?
+  fileMimeType  String?
+  fileSize      Int?
+  storagePath   String?
+  rawText       String
+  textHash      String
+  createdById   String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  isLatest      Boolean          @default(true)
+  document      Document         @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  createdBy     User?            @relation("DocumentVersionCreator", fields: [createdById], references: [id])
+  chunks        Chunk[]
+  citations     Citation[]
+  mcpResources  McpResource[]
+  fromChanges   DocumentChange[] @relation("FromVersion")
+  toChanges     DocumentChange[] @relation("ToVersion")
+}
+
+model Chunk {
+  id                String          @id @default(cuid())
+  documentVersionId String
+  projectId         String
+  content           String
+  embedding         Unsupported("vector(1536)")?
+  chunkIndex        Int
+  pageNumber        Int?
+  sectionTitle      String?
+  startChar         Int?
+  endChar           Int?
+  tokenCount        Int?
+  createdAt         DateTime        @default(now())
+  documentVersion   DocumentVersion @relation(fields: [documentVersionId], references: [id], onDelete: Cascade)
+  project           Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  citations         Citation[]
+}
+
+model Citation {
+  id                String          @id @default(cuid())
+  chunkId           String
+  documentVersionId String
+  label             String
+  pageNumber        Int?
+  sectionTitle      String?
+  sourceUri         String?
+  createdAt         DateTime        @default(now())
+  chunk             Chunk           @relation(fields: [chunkId], references: [id], onDelete: Cascade)
+  documentVersion   DocumentVersion @relation(fields: [documentVersionId], references: [id], onDelete: Cascade)
+}
+
+model RetrievalLog {
+  id                String   @id @default(cuid())
+  projectId          String
+  userId             String?
+  query              String
+  answer             String
+  retrievedChunkIds  Json
+  citedChunkIds      Json
+  createdAt          DateTime @default(now())
+  project            Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user               User?    @relation(fields: [userId], references: [id])
+}
+
+model McpResource {
+  id                String           @id @default(cuid())
+  projectId          String
+  documentId         String?
+  documentVersionId  String?
+  uri                String           @unique
+  name              String
+  description       String
+  mimeType          String
+  visibility        Visibility
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  project           Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  document          Document?         @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  documentVersion   DocumentVersion?  @relation(fields: [documentVersionId], references: [id], onDelete: Cascade)
+}
+
+model DocumentChange {
+  id            String          @id @default(cuid())
+  documentId    String
+  fromVersionId String
+  toVersionId   String
+  summary       String
+  diffText      String
+  createdAt     DateTime        @default(now())
+  document      Document        @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  fromVersion   DocumentVersion @relation("FromVersion", fields: [fromVersionId], references: [id], onDelete: Cascade)
+  toVersion     DocumentVersion @relation("ToVersion", fields: [toVersionId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, fromVersionId, toVersionId])
+}
