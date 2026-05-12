@@ -22,6 +22,7 @@ export type RetrievedChunk = {
   visibility: Visibility;
   sourceUri: string | null;
   createdAt: Date;
+  score?: number;
 };
 
 export type AskOptions = {
@@ -31,8 +32,16 @@ export type AskOptions = {
   retrievalMode: RetrievalMode;
 };
 
+export type ClaimTraceClassification = "SUPPORTED" | "PARTIALLY_SUPPORTED" | "CONTRADICTED" | "NOT_FOUND";
+
+export type ClaimTraceResult = {
+  classification: ClaimTraceClassification;
+  explanation: string;
+  recommendedSaferWording?: string;
+};
+
 function lexicalScore(query: string, text: string) {
-  const q = new Set(query.toLowerCase().match(/[a-z0-9]+/g) ?? []);
+  const q = new Set(meaningfulTerms(query));
   const words = text.toLowerCase().match(/[a-z0-9]+/g) ?? [];
   if (!q.size || !words.length) return 0;
   let hits = 0;
@@ -40,18 +49,82 @@ function lexicalScore(query: string, text: string) {
   return hits / Math.sqrt(words.length);
 }
 
+const stopWords = new Set(["a", "an", "and", "are", "as", "did", "for", "from", "give", "how", "i", "in", "is", "it", "me", "of", "on", "or", "the", "this", "to", "we", "what", "when", "where", "which", "why"]);
+
+function meaningfulTerms(text: string) {
+  return (text.toLowerCase().match(/[a-z0-9]+/g) ?? []).filter((word) => word.length > 2 && !stopWords.has(word));
+}
+
+function lexicalHitCount(query: string, text: string) {
+  const q = new Set(meaningfulTerms(query));
+  if (!q.size) return 0;
+  return meaningfulTerms(text).reduce((hits, word) => hits + (q.has(word) ? 1 : 0), 0);
+}
+
+function hasEnoughEvidence(query: string, chunks: RetrievedChunk[]) {
+  if (/which documents are authoritative/i.test(query)) return chunks.length > 0;
+  return chunks.some((chunk) => chunk.similarity > 0.2 || lexicalHitCount(query, `${chunk.documentTitle} ${chunk.content}`) >= 2);
+}
+
 export function isClaimTraceQuery(query: string) {
   return /where did this claim come from|is this claim supported|trace this claim/i.test(query);
 }
 
-export function classifyClaimSupport(query: string, chunks: RetrievedChunk[]) {
+export function applyRoleVisibility<T extends { visibility: Visibility }>(chunks: T[], roleView: RoleView) {
+  return chunks.filter((chunk) => canRoleSeeVisibility(roleView, chunk.visibility));
+}
+
+export function applyAuthorityFilter<T extends { authorityStatus: AuthorityStatus; isLatest?: boolean }>(chunks: T[], mode: RetrievalMode) {
+  const statuses = authorityStatusesForMode(mode);
+  return chunks.filter((chunk) => {
+    if (!statuses.includes(chunk.authorityStatus)) return false;
+    if ((mode === "LATEST_AUTHORITATIVE_ONLY" || mode === "PUBLIC_SAFE_ONLY") && chunk.isLatest === false) return false;
+    return true;
+  });
+}
+
+export function classifyClaimSupport(query: string, chunks: RetrievedChunk[]): ClaimTraceClassification {
   const top = chunks[0];
-  const deprecatedContradiction = chunks.some((c) => c.authorityStatus === "DEPRECATED") && chunks.some((c) => c.authorityStatus === "AUTHORITATIVE");
+  const authoritativeCaution = chunks.some((c) => c.authorityStatus === "AUTHORITATIVE" && /avoid overstating|mixed around zero|caution/i.test(c.content));
+  const olderStrongClaim = chunks.some((c) => /expected gambling > controls|clearly responded|gambling-dominant|more to gambling ads/i.test(c.content));
+  const queryIsOverstated = /clearly|always|dominant|more to gambling|responded more/i.test(query);
   if (!top) return "NOT_FOUND" as const;
-  if (deprecatedContradiction && /clearly|always|dominant|more to gambling/i.test(query)) return "CONTRADICTED" as const;
-  if (top.similarity > 0.42 || lexicalScore(query, top.content) > 0.5) return "SUPPORTED" as const;
+  if (queryIsOverstated && authoritativeCaution) return "CONTRADICTED" as const;
+  if (queryIsOverstated && olderStrongClaim) return "PARTIALLY_SUPPORTED" as const;
+  if (top.similarity > 0.35 || lexicalScore(query, top.content) > 0.5) return "SUPPORTED" as const;
   if (top.similarity > 0.18 || lexicalScore(query, top.content) > 0.18) return "PARTIALLY_SUPPORTED" as const;
   return "NOT_FOUND" as const;
+}
+
+export function buildClaimTrace(query: string, chunks: RetrievedChunk[]): ClaimTraceResult {
+  const classification = classifyClaimSupport(query, chunks);
+  if (classification === "CONTRADICTED") {
+    return {
+      classification,
+      explanation:
+        "The visible authoritative context cautions against the stronger claim. It says ROI distributions are mixed around zero and warns against overstating a gambling-dominant ventral striatum response.",
+      recommendedSaferWording:
+        "The approved context says the task estimates reward ROI response to gambling-related advertising and compares it with multiple control categories; it does not support saying the ventral striatum clearly responded more to gambling ads.",
+    };
+  }
+  if (classification === "PARTIALLY_SUPPORTED") {
+    return {
+      classification,
+      explanation:
+        "Some visible context is directionally related, but the retrieved evidence does not fully support the claim as written.",
+      recommendedSaferWording: "Use cautious wording and name the specific approved contrast or source instead of making a broad claim.",
+    };
+  }
+  if (classification === "SUPPORTED") {
+    return {
+      classification,
+      explanation: "The claim is supported by visible retrieved context. Check the cited source wording before reusing it.",
+    };
+  }
+  return {
+    classification,
+    explanation: "No visible retrieved context for this role view supports the claim.",
+  };
 }
 
 export async function retrieveProjectContext(options: AskOptions) {
@@ -72,14 +145,21 @@ export async function retrieveProjectContext(options: AskOptions) {
         AND d.visibility = ANY(${visibility}::"Visibility"[])
         AND d."authorityStatus" = ANY(${statuses}::"AuthorityStatus"[])
         AND (${options.retrievalMode !== "PUBLIC_SAFE_ONLY"} OR d.visibility = 'PUBLIC')
+        AND (${options.retrievalMode !== "LATEST_AUTHORITATIVE_ONLY" && options.retrievalMode !== "PUBLIC_SAFE_ONLY"} OR v."isLatest" = true)
       ORDER BY c.embedding <=> ${toSqlVector(queryEmbedding)}::vector
-      LIMIT 24
+      LIMIT 80
     `;
   } catch {
     const fallback = await prisma.chunk.findMany({
       where: {
         projectId: options.projectId,
-        documentVersion: { document: { visibility: { in: visibility }, authorityStatus: { in: statuses } } },
+        documentVersion: {
+          ...(options.retrievalMode === "LATEST_AUTHORITATIVE_ONLY" || options.retrievalMode === "PUBLIC_SAFE_ONLY" ? { isLatest: true } : {}),
+          document: {
+            visibility: { in: options.retrievalMode === "PUBLIC_SAFE_ONLY" ? ["PUBLIC"] : visibility },
+            authorityStatus: { in: statuses },
+          },
+        },
       },
       include: { documentVersion: { include: { document: true } } },
       take: 200,
@@ -103,17 +183,16 @@ export async function retrieveProjectContext(options: AskOptions) {
       createdAt: c.documentVersion.createdAt,
     }));
   }
-  return rankChunks(rows, options.query).slice(0, 8);
+  return rankChunks(applyAuthorityFilter(applyRoleVisibility(rows, options.roleView), options.retrievalMode), options.query).slice(0, 8);
 }
 
 export function rankChunks(chunks: RetrievedChunk[], query: string) {
   return chunks
-    .filter((chunk) => canRoleSeeVisibility("PI", chunk.visibility))
     .map((chunk) => ({
       ...chunk,
       score:
         chunk.similarity * 100 +
-        lexicalScore(query, chunk.content) * 25 +
+        lexicalScore(query, `${chunk.documentTitle} ${chunk.content}`) * 25 +
         authorityWeight[chunk.authorityStatus] +
         (chunk.isLatest ? 20 : -10) +
         (chunk.documentType === "ANALYSIS_PLAN" && /welch|analysis|changed|version/i.test(query) ? 15 : 0) +
@@ -153,19 +232,21 @@ export async function generateAnswerWithCitations(options: AskOptions, chunks: R
     ),
   ];
   if (detectConflicts(chunks)) warnings.push("Potential conflict: older/deprecated language differs from newer authoritative context.");
-  if (!chunks.length) {
-    return { answer: "Evidence is insufficient in the visible project context for this role view.", citations, warnings };
+  if (!chunks.length || !hasEnoughEvidence(options.query, chunks)) {
+    return {
+      answer: "Not enough evidence in the visible project context to answer this safely.",
+      citations: [],
+      warnings: [...warnings, "Insufficient visible context: no answer was generated."],
+      claimTrace: isClaimTraceQuery(options.query) ? buildClaimTrace(options.query, []) : undefined,
+    };
   }
   if (isClaimTraceQuery(options.query)) {
-    const classification = classifyClaimSupport(options.query, chunks);
+    const claimTrace = buildClaimTrace(options.query, chunks);
     return {
-      answer: `Claim trace classification: ${classification}. The strongest visible evidence is in ${citations[0]?.documentTitle ?? "no cited source"}. ${
-        classification === "CONTRADICTED"
-          ? "Newer authoritative context cautions against the stronger claim."
-          : "Use the citations below to inspect the source wording."
-      } [C1]`,
+      answer: `Claim trace classification: ${claimTrace.classification}. ${claimTrace.explanation} ${citations[0] ? "[C1]" : ""}`,
       citations,
       warnings,
+      claimTrace,
     };
   }
   const prompt = `Question: ${options.query}\n\nContext:\n${citations

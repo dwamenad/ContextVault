@@ -27,12 +27,14 @@ export async function compareDocumentVersions(documentId: string, fromVersionId:
 
 export function detectImportantChanges(diffText: string) {
   const checks = [
-    [/Welch|unequal variances|unequal sample/i, "Changed or added Welch's t-test rationale."],
-    [/mixed around zero|avoid overstating|caution/i, "Added caution about ROI interpretation."],
-    [/gambling > everyday|gambling > non-gambling|mean controls/i, "Updated contrast language."],
-    [/participant|sample size|N\s*=/i, "Potential sample-size language changed."],
-    [/public-safe|collaborator|public summary/i, "Potential public-safe wording changed."],
-    [/expected gambling > controls|gambling-dominant/i, "Older stronger claim language was removed or revised."],
+    [/Welch|t-test|unequal variances|unequal sample/i, "Statistical test or Welch's t-test rationale changed."],
+    [/method|analysis plan|FSL FEAT|fslmeants|cope outputs|model documentation/i, "Methods or analysis workflow language changed."],
+    [/participant|sample size|usable runs|enrollment|\bN\s*=/i, "Sample size, enrollment, or usable-run language changed."],
+    [/ROI|ventral striatum|mask|reward ROI|ROI extraction/i, "ROI definition or extraction language changed."],
+    [/contrast|gambling > everyday|gambling > non-gambling|mean controls|control ads/i, "Contrast language changed."],
+    [/mixed around zero|avoid overstating|caution|confirmatory claims|provisional/i, "Claim strength or caution language changed."],
+    [/public-safe|public-facing|collaborator|sensitive internal|participant-level|private/i, "Public/private sharing language changed."],
+    [/expected gambling > controls|gambling-dominant|clearly responded|clearly respond/i, "Older stronger claim language was removed or revised."],
   ] as const;
   return checks.filter(([regex]) => regex.test(diffText)).map(([, label]) => label);
 }

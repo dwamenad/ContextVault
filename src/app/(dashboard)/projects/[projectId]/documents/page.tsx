@@ -1,4 +1,5 @@
 import { DocumentActions } from "@/components/contextvault/document-actions";
+import { DocumentGovernanceForm } from "@/components/contextvault/document-governance-form";
 import { AuthorityBadge, VisibilityBadge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { prisma } from "@/lib/db/prisma";
@@ -65,6 +66,13 @@ export default async function DocumentsPage({ params }: { params: Promise<{ proj
               <VisibilityBadge value={doc.visibility} />
             </div>
             <p className="mt-2 text-sm text-slate-500">{doc.documentType} · {doc.sourceType} · {doc.isMcpExposed ? doc.mcpUri ?? "MCP exposed" : "Not MCP exposed"}</p>
+            <DocumentGovernanceForm
+              documentId={doc.id}
+              visibility={doc.visibility}
+              authorityStatus={doc.authorityStatus}
+              isMcpExposed={doc.isMcpExposed}
+              demoMode={usingFallback}
+            />
             <div className="mt-4 grid gap-3">
               {doc.versions.map((version) => (
                 <div key={version.id} className="rounded-md border border-slate-200 p-3 text-sm dark:border-slate-800">

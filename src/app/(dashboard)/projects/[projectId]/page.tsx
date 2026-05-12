@@ -64,6 +64,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ projec
         <ButtonLink href={`/projects/${project.id}/documents`} className="bg-slate-700 hover:bg-slate-600">Documents</ButtonLink>
         <ButtonLink href={`/projects/${project.id}/versions`} className="bg-slate-700 hover:bg-slate-600">Versions</ButtonLink>
         <ButtonLink href={`/projects/${project.id}/mcp`} className="bg-slate-700 hover:bg-slate-600">MCP</ButtonLink>
+        <ButtonLink href={`/projects/${project.id}/audit`} className="bg-slate-700 hover:bg-slate-600">Audit</ButtonLink>
       </div>
       <div className="mt-8 grid gap-5 md:grid-cols-4">
         {Object.entries(counts).map(([label, value]) => <Card key={label}><p className="text-2xl font-semibold">{value}</p><p className="text-sm capitalize text-slate-500">{label} docs</p></Card>)}

@@ -21,6 +21,11 @@ type AskResult = {
     excerpt: string;
     sourceUri: string | null;
   }[];
+  claimTrace?: {
+    classification: "SUPPORTED" | "PARTIALLY_SUPPORTED" | "CONTRADICTED" | "NOT_FOUND";
+    explanation: string;
+    recommendedSaferWording?: string;
+  };
 };
 
 export function AskClient({ projectId }: { projectId: string }) {
@@ -73,6 +78,23 @@ export function AskClient({ projectId }: { projectId: string }) {
           <h2 className="text-lg font-semibold">Answer</h2>
           <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-slate-300">{result?.answer ?? "Ask a project question to retrieve governed context."}</p>
         </Card>
+        {result?.claimTrace ? (
+          <Card>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-lg font-semibold">Claim Trace</h2>
+              <span className="rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 text-xs font-medium dark:border-slate-800 dark:bg-slate-900">
+                {result.claimTrace.classification}
+              </span>
+            </div>
+            <p className="mt-3 text-sm leading-6 text-slate-700 dark:text-slate-300">{result.claimTrace.explanation}</p>
+            {result.claimTrace.recommendedSaferWording ? (
+              <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm leading-6 text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-100">
+                <span className="font-medium">Recommended safer wording: </span>
+                {result.claimTrace.recommendedSaferWording}
+              </div>
+            ) : null}
+          </Card>
+        ) : null}
         <div className="grid gap-4">
           {result?.citations?.map((citation) => (
             <Card key={citation.id}>

@@ -200,6 +200,18 @@ export const demoRetrievalLogs = [
   },
 ];
 
+export const demoDocumentChanges = [
+  {
+    id: "demo-change-plan-v1-v2",
+    summary:
+      "Analysis Plan v2 adds updated contrasts, Welch's t-test rationale, and caution around mixed ROI distributions; it removes stronger expected gambling > controls wording.",
+    createdAt: now,
+    document: { title: "Analysis Plan" },
+    fromVersion: { versionLabel: "v1" },
+    toVersion: { versionLabel: "v2" },
+  },
+];
+
 export function isDemoProjectId(projectId: string) {
   return projectId === "demo-adview";
 }
@@ -219,9 +231,15 @@ export function getDemoDocuments(projectId = "demo-adview") {
 }
 
 function lexicalScore(query: string, text: string) {
-  const terms = new Set(query.toLowerCase().match(/[a-z0-9]+/g) ?? []);
-  const words = text.toLowerCase().match(/[a-z0-9]+/g) ?? [];
+  const terms = new Set(meaningfulTerms(query));
+  const words = meaningfulTerms(text);
   return words.reduce((score, word) => score + (terms.has(word) ? 1 : 0), 0);
+}
+
+const stopWords = new Set(["a", "an", "and", "are", "as", "did", "for", "from", "give", "how", "i", "in", "is", "it", "me", "of", "on", "or", "the", "this", "to", "we", "what", "when", "where", "which", "why"]);
+
+function meaningfulTerms(text: string) {
+  return (text.toLowerCase().match(/[a-z0-9]+/g) ?? []).filter((word) => word.length > 2 && !stopWords.has(word));
 }
 
 function visibleDemoDocuments(roleView: RoleView, retrievalMode: RetrievalMode) {
@@ -235,6 +253,8 @@ function visibleDemoDocuments(roleView: RoleView, retrievalMode: RetrievalMode) 
 
 export function askDemoProject(input: { query: string; roleView: RoleView; retrievalMode: RetrievalMode }) {
   const docs = visibleDemoDocuments(input.roleView, input.retrievalMode);
+  const query = input.query.toLowerCase();
+  const overstatementTrace = query.includes("ventral striatum clearly") || query.includes("is this claim supported") || query.includes("trace this claim");
   const ranked = docs
     .flatMap((document) =>
       document.versions
@@ -244,14 +264,15 @@ export function askDemoProject(input: { query: string; roleView: RoleView; retri
             document,
             version: versionItem,
             chunk,
-            score: lexicalScore(input.query, `${document.title} ${versionItem.rawText}`),
+            score:
+              lexicalScore(input.query, `${document.title} ${versionItem.rawText}`) +
+              (overstatementTrace && /avoid overstating|mixed around zero/i.test(versionItem.rawText) ? 8 : 0),
           })),
         ),
     )
     .sort((a, b) => b.score - a.score)
     .slice(0, 5);
 
-  const query = input.query.toLowerCase();
   const citations = ranked.map((item, index) => ({
     id: `C${index + 1}`,
     chunkId: item.chunk.id,
@@ -267,11 +288,40 @@ export function askDemoProject(input: { query: string; roleView: RoleView; retri
   }));
 
   const warnings: string[] = ["Demo fallback mode: results are generated from bundled seed context because the database is unavailable."];
+  const enoughEvidence = ranked.some((item) => item.score >= 3) || query.includes("authoritative");
   let answer = "Evidence is insufficient in the visible demo context for this role view.";
+  let claimTrace:
+    | {
+        classification: "SUPPORTED" | "PARTIALLY_SUPPORTED" | "CONTRADICTED" | "NOT_FOUND";
+        explanation: string;
+        recommendedSaferWording?: string;
+      }
+    | undefined;
+
+  if (!enoughEvidence) {
+    answer = "Not enough evidence in the visible demo context to answer this safely.";
+    warnings.push("Insufficient visible context: no answer was generated.");
+    return {
+      answer,
+      warnings,
+      citations: [],
+      retrievedChunks: [],
+      claimTrace: query.includes("claim supported") || query.includes("trace this claim")
+        ? { classification: "NOT_FOUND", explanation: "No visible demo context supports the claim." as const }
+        : undefined,
+    };
+  }
 
   if (query.includes("welch")) {
     answer = "Welch's t-test is justified in the approved analysis plan because ROI distributions may have unequal variances and/or unequal sample sizes across usable runs. [C1]";
   } else if (query.includes("ventral striatum clearly") || query.includes("is this claim supported") || query.includes("trace this claim")) {
+    claimTrace = {
+      classification: "CONTRADICTED",
+      explanation:
+        "The latest approved analysis plan says ROI distributions are mixed around zero and warns against overstating a gambling-dominant ventral striatum response.",
+      recommendedSaferWording:
+        "The task estimates reward ROI response to gambling-related advertising and compares it with multiple control categories; current approved context does not support saying the ventral striatum clearly responded more to gambling ads.",
+    };
     answer = "Claim trace classification: CONTRADICTED. The latest approved analysis plan says ROI distributions are mixed around zero and warns against overstating a gambling-dominant ventral striatum response. [C1]";
     warnings.push("Potential conflict: older v1 language expected gambling > controls, while v2 uses more cautious approved language.");
   } else if (query.includes("what changed") || query.includes("between analysis plan v1 and v2")) {
@@ -297,6 +347,7 @@ export function askDemoProject(input: { query: string; roleView: RoleView; retri
       authorityStatus: item.document.authorityStatus,
       visibility: item.document.visibility,
     })),
+    claimTrace,
   };
 }
 
