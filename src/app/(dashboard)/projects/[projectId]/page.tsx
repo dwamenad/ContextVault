@@ -3,15 +3,45 @@ import { AuthorityBadge, VisibilityBadge } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { prisma } from "@/lib/db/prisma";
+import { getDemoProject } from "@/lib/demo/fallback";
 
 export const dynamic = "force-dynamic";
 
+type ProjectDocument = {
+  id: string;
+  title: string;
+  documentType: string;
+  visibility: string;
+  authorityStatus: string;
+  isMcpExposed: boolean;
+};
+
+type ProjectView = {
+  id: string;
+  name: string;
+  description: string | null;
+  vault?: { name: string };
+  documents: ProjectDocument[];
+};
+
 export default async function ProjectPage({ params }: { params: Promise<{ projectId: string }> }) {
   const { projectId } = await params;
-  const project = await prisma.project.findUniqueOrThrow({
-    where: { id: projectId },
-    include: { documents: { include: { versions: { where: { isLatest: true } } } }, mcpResources: true, vault: true },
-  });
+  let usingFallback = false;
+  let project: ProjectView | null = getDemoProject(projectId);
+  if (!project) {
+    try {
+      project = await prisma.project.findUniqueOrThrow({
+        where: { id: projectId },
+        include: { documents: { include: { versions: { where: { isLatest: true } } } }, mcpResources: true, vault: true },
+      });
+    } catch {
+      usingFallback = true;
+      project = getDemoProject("demo-adview");
+    }
+  } else {
+    usingFallback = true;
+  }
+  if (!project) throw new Error("Project not found.");
   const grouped = Object.groupBy(project.documents, (doc) => doc.documentType);
   const counts = {
     authoritative: project.documents.filter((d) => d.authorityStatus === "AUTHORITATIVE").length,
@@ -21,9 +51,14 @@ export default async function ProjectPage({ params }: { params: Promise<{ projec
   };
   return (
     <div className="p-6 lg:p-10">
-      <p className="text-sm text-slate-500">{project.vault.name}</p>
+      <p className="text-sm text-slate-500">{usingFallback ? "Decision Neuroscience Vault" : project.vault?.name}</p>
       <h1 className="text-3xl font-semibold tracking-tight">{project.name}</h1>
       <p className="mt-2 max-w-3xl text-slate-600 dark:text-slate-300">{project.description}</p>
+      {usingFallback ? (
+        <div className="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100">
+          Demo fallback mode is active. This project is backed by bundled seed data until Postgres with pgvector is running.
+        </div>
+      ) : null}
       <div className="mt-6 flex flex-wrap gap-3">
         <ButtonLink href={`/projects/${project.id}/ask`}>Ask</ButtonLink>
         <ButtonLink href={`/projects/${project.id}/documents`} className="bg-slate-700 hover:bg-slate-600">Documents</ButtonLink>

@@ -5,9 +5,13 @@ import { Upload } from "lucide-react";
 import { buttonClasses } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
-export function DocumentActions({ projectId }: { projectId: string }) {
+export function DocumentActions({ projectId, demoMode = false }: { projectId: string; demoMode?: boolean }) {
   const [message, setMessage] = useState("");
   async function submitManual(formData: FormData) {
+    if (demoMode) {
+      setMessage("Demo mode does not persist new documents. Start Postgres with pgvector to ingest project files.");
+      return;
+    }
     setMessage("Ingesting manual document...");
     const body = Object.fromEntries(formData.entries());
     const response = await fetch("/api/documents/manual", {
@@ -18,6 +22,10 @@ export function DocumentActions({ projectId }: { projectId: string }) {
     setMessage(response.ok ? "Document ingested. Refresh to view latest chunks and versions." : "Ingestion failed.");
   }
   async function submitUpload(formData: FormData) {
+    if (demoMode) {
+      setMessage("Demo mode does not persist uploaded files. Start Postgres with pgvector to ingest project files.");
+      return;
+    }
     setMessage("Uploading and ingesting file...");
     formData.set("projectId", projectId);
     formData.set("isMcpExposed", formData.get("isMcpExposed") ? "true" : "false");
@@ -42,6 +50,7 @@ export function DocumentActions({ projectId }: { projectId: string }) {
     <div className="grid gap-5 lg:grid-cols-2">
       <Card>
         <h2 className="font-semibold">Add manual text document</h2>
+        {demoMode ? <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">Preview only in fallback mode.</p> : null}
         <form action={submitManual} className="mt-4 grid gap-3">
           <input name="title" className="rounded-md border p-2 text-sm dark:border-slate-700 dark:bg-slate-900" placeholder="Document title" required />
           <div className="grid gap-2 md:grid-cols-3">{fields}</div>
@@ -51,6 +60,7 @@ export function DocumentActions({ projectId }: { projectId: string }) {
       </Card>
       <Card>
         <h2 className="font-semibold">Upload file</h2>
+        {demoMode ? <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">Preview only in fallback mode.</p> : null}
         <form action={submitUpload} className="mt-4 grid gap-3">
           <input name="title" className="rounded-md border p-2 text-sm dark:border-slate-700 dark:bg-slate-900" placeholder="Optional title" />
           <input name="file" className="rounded-md border p-2 text-sm dark:border-slate-700" type="file" required />

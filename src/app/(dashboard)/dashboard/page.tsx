@@ -62,7 +62,7 @@ export default async function DashboardPage() {
       </div>
       <section id="vaults" className="mt-8 grid gap-5 lg:grid-cols-2">
         {vaults.map((vault) => (
-          <Link key={vault.id} href={usingFallback ? "#" : `/vaults/${vault.id}`}>
+          <Link key={vault.id} href={`/vaults/${vault.id}`}>
             <Card className="h-full hover:border-slate-400">
               <p className="text-sm text-slate-500">{vault.team.name}</p>
               <h2 className="mt-2 text-xl font-semibold">{vault.name}</h2>

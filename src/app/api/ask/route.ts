@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getMockSession } from "@/lib/auth/session";
+import { askDemoProject, isDemoProjectId } from "@/lib/demo/fallback";
 import { askProject } from "@/lib/retrieval/engine";
 
 const schema = z.object({
@@ -12,7 +13,14 @@ const schema = z.object({
 
 export async function POST(request: Request) {
   const body = schema.parse(await request.json());
-  const session = await getMockSession();
-  const result = await askProject({ ...body, userId: session.userId });
-  return NextResponse.json(result);
+  if (isDemoProjectId(body.projectId)) {
+    return NextResponse.json(askDemoProject(body));
+  }
+  try {
+    const session = await getMockSession();
+    const result = await askProject({ ...body, userId: session.userId });
+    return NextResponse.json(result);
+  } catch {
+    return NextResponse.json(askDemoProject(body));
+  }
 }
