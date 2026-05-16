@@ -56,7 +56,15 @@ npm run db:migrate
 npm run db:seed
 ```
 
-6. Run the app:
+6. Verify database-backed mode:
+
+```bash
+npm run db:check
+```
+
+This checks `DATABASE_URL`, Postgres connectivity, the `pgvector` extension, required Prisma tables, seeded demo data, chunks, and MCP resources. You can also open `/settings/database` in the app.
+
+7. Run the app:
 
 ```bash
 npm run dev
@@ -67,6 +75,14 @@ Open [http://localhost:3000](http://localhost:3000), then choose **Open Demo Vau
 ## Database
 
 The Prisma schema defines users, teams, vaults, projects, documents, document versions, chunks, citations, retrieval logs, MCP resources, and document changes. The first migration enables `vector` and `pgcrypto`. Chunk embeddings use pgvector through raw SQL because Prisma vector support is still awkward for portable typed helpers.
+
+For a one-command local database setup when Docker is available:
+
+```bash
+npm run db:setup
+```
+
+If `npm run db:check` reports that `pgvector` is missing, use the Docker Compose service in this repo or install pgvector into the Postgres server named by `DATABASE_URL`. A plain Postgres install without the `vector` extension cannot run the embedding-backed retrieval path.
 
 ## Using The Ask Page
 
