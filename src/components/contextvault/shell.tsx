@@ -11,8 +11,8 @@ const nav = [
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-950 dark:bg-slate-950 dark:text-slate-50">
-      <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-950 lg:block">
+    <div className="min-h-screen bg-slate-50 text-slate-950 dark:bg-black dark:text-slate-50">
+      <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-black lg:block">
         <Link href="/" className="text-lg font-semibold tracking-tight">ContextVault MCP</Link>
         <nav className="mt-8 space-y-1">
           {nav.map((item) => (
