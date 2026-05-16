@@ -28,10 +28,23 @@ type AskResult = {
   };
 };
 
-export function AskClient({ projectId }: { projectId: string }) {
-  const [query, setQuery] = useState("Why did we use Welch's t-test?");
-  const [roleView, setRoleView] = useState("ANALYST");
-  const [retrievalMode, setRetrievalMode] = useState("INCLUDE_SUPPORTING");
+const roleViews = new Set(["PI", "ANALYST", "COLLABORATOR", "PUBLIC_VIEWER"]);
+const retrievalModes = new Set(["LATEST_AUTHORITATIVE_ONLY", "INCLUDE_SUPPORTING", "INCLUDE_DRAFTS", "PUBLIC_SAFE_ONLY"]);
+
+export function AskClient({
+  projectId,
+  initialQuery,
+  initialRoleView,
+  initialRetrievalMode,
+}: {
+  projectId: string;
+  initialQuery?: string;
+  initialRoleView?: string;
+  initialRetrievalMode?: string;
+}) {
+  const [query, setQuery] = useState(initialQuery || "Why did we use Welch's t-test?");
+  const [roleView, setRoleView] = useState(initialRoleView && roleViews.has(initialRoleView) ? initialRoleView : "ANALYST");
+  const [retrievalMode, setRetrievalMode] = useState(initialRetrievalMode && retrievalModes.has(initialRetrievalMode) ? initialRetrievalMode : "INCLUDE_SUPPORTING");
   const [result, setResult] = useState<AskResult | null>(null);
   const [loading, setLoading] = useState(false);
   async function ask() {
